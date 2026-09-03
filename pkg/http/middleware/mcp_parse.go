@@ -101,13 +101,25 @@ func WithMCPParse() func(http.Handler) http.Handler {
 				// into a typed struct, avoiding a full map allocation over the
 				// (potentially large) arguments payload.
 				if len(mcpReq.Params.Arguments) > 0 {
+					// Decode owner/repo as RawMessage so a wrongly typed field
+					// doesn't prevent the other from being extracted.
 					var args struct {
-						Owner string `json:"owner"`
-						Repo  string `json:"repo"`
+						Owner json.RawMessage `json:"owner"`
+						Repo  json.RawMessage `json:"repo"`
 					}
 					if err := json.Unmarshal(mcpReq.Params.Arguments, &args); err == nil {
-						methodInfo.Owner = args.Owner
-						methodInfo.Repo = args.Repo
+						if len(args.Owner) > 0 {
+							var owner string
+							if err := json.Unmarshal(args.Owner, &owner); err == nil {
+								methodInfo.Owner = owner
+							}
+						}
+						if len(args.Repo) > 0 {
+							var repo string
+							if err := json.Unmarshal(args.Repo, &repo); err == nil {
+								methodInfo.Repo = repo
+							}
+						}
 					}
 				}
 			case "prompts/get":

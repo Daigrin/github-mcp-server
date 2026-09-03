@@ -115,6 +115,17 @@ func TestWithMCPParse(t *testing.T) {
 			expectedItem:   "get_file_contents",
 		},
 		{
+			name:           "tools/call with wrongly typed owner still extracts repo",
+			method:         http.MethodPost,
+			path:           "/mcp",
+			body:           `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"owner":123,"repo":"github-mcp-server"}}}`,
+			expectInfo:     true,
+			expectedMethod: "tools/call",
+			expectedItem:   "get_file_contents",
+			expectedOwner:  "",
+			expectedRepo:   "github-mcp-server",
+		},
+		{
 			name:           "prompts/get parses name",
 			method:         http.MethodPost,
 			path:           "/mcp",
