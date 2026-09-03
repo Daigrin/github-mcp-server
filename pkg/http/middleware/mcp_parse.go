@@ -97,19 +97,17 @@ func WithMCPParse() func(http.Handler) http.Handler {
 			switch mcpReq.Method {
 			case "tools/call":
 				methodInfo.ItemName = mcpReq.Params.Name
-				// Parse arguments if present
+				// Extract owner and repo if present. Only these fields are decoded
+				// into a typed struct, avoiding a full map allocation over the
+				// (potentially large) arguments payload.
 				if len(mcpReq.Params.Arguments) > 0 {
-					var args map[string]any
-					err := json.Unmarshal(mcpReq.Params.Arguments, &args)
-					if err == nil {
-						methodInfo.Arguments = args
-						// Extract owner and repo if present
-						if owner, ok := args["owner"].(string); ok {
-							methodInfo.Owner = owner
-						}
-						if repo, ok := args["repo"].(string); ok {
-							methodInfo.Repo = repo
-						}
+					var args struct {
+						Owner string `json:"owner"`
+						Repo  string `json:"repo"`
+					}
+					if err := json.Unmarshal(mcpReq.Params.Arguments, &args); err == nil {
+						methodInfo.Owner = args.Owner
+						methodInfo.Repo = args.Repo
 					}
 				}
 			case "prompts/get":
