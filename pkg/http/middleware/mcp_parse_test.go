@@ -23,7 +23,6 @@ func TestWithMCPParse(t *testing.T) {
 		expectedItem   string
 		expectedOwner  string
 		expectedRepo   string
-		expectedArgs   map[string]any
 	}{
 		{
 			name:       "health check path is skipped",
@@ -94,7 +93,6 @@ func TestWithMCPParse(t *testing.T) {
 			expectedItem:   "get_file_contents",
 			expectedOwner:  "github",
 			expectedRepo:   "github-mcp-server",
-			expectedArgs:   map[string]any{"owner": "github", "repo": "github-mcp-server", "path": "README.md"},
 		},
 		{
 			name:           "tools/call with invalid arguments JSON continues without args",
@@ -158,9 +156,6 @@ func TestWithMCPParse(t *testing.T) {
 				assert.Equal(t, tt.expectedItem, capturedInfo.ItemName)
 				assert.Equal(t, tt.expectedOwner, capturedInfo.Owner)
 				assert.Equal(t, tt.expectedRepo, capturedInfo.Repo)
-				if tt.expectedArgs != nil {
-					assert.Equal(t, tt.expectedArgs, capturedInfo.Arguments)
-				}
 			} else {
 				assert.False(t, infoCaptured, "MCPMethodInfo should not be present in context")
 			}

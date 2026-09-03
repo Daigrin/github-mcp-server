@@ -21,8 +21,6 @@ type MCPMethodInfo struct {
 	Owner string
 	// Repo is the repository name from tool call arguments, if present
 	Repo string
-	// Arguments contains the raw tool arguments for tools/call requests
-	Arguments map[string]any
 }
 
 // WithMCPMethodInfo stores the MCPMethodInfo in the context.
