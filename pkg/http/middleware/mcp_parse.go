@@ -29,8 +29,8 @@ type mcpJSONRPCRequest struct {
 // request lifecycle and stores the parsed information in the request context.
 // This enables:
 //   - Registry filtering via ForMCPRequest (only register needed tools/resources/prompts)
-//   - Avoiding duplicate JSON parsing in downstream middlewares
-//   - Access to owner/repo for secret-scanning middleware
+//   - Avoiding duplicate JSON envelope parsing in downstream middleware
+//   - Lazy access to raw tool arguments for call-specific policy checks
 //
 // The middleware reads the request body, parses it, restores the body for downstream
 // handlers, and stores the parsed MCPMethodInfo in the request context.
@@ -72,62 +72,15 @@ func WithMCPParse() func(http.Handler) http.Handler {
 				return
 			}
 
-			// Parse the JSON-RPC request
-			var mcpReq mcpJSONRPCRequest
-			err = json.Unmarshal(body, &mcpReq)
+			methodInfo, err := parseMCPMethodInfo(body)
 			if err != nil {
 				// Log but continue - could be a non-MCP request or malformed JSON
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			// Skip if not a valid JSON-RPC 2.0 request
-			if mcpReq.JSONRPC != "2.0" || mcpReq.Method == "" {
+			if methodInfo == nil {
 				next.ServeHTTP(w, r)
 				return
-			}
-
-			// Build the MCPMethodInfo
-			methodInfo := &ghcontext.MCPMethodInfo{
-				Method: mcpReq.Method,
-			}
-
-			// Extract item name based on method type
-
-			switch mcpReq.Method {
-			case "tools/call":
-				methodInfo.ItemName = mcpReq.Params.Name
-				// Extract owner and repo if present. Only these fields are decoded
-				// into a typed struct, avoiding a full map allocation over the
-				// (potentially large) arguments payload.
-				if len(mcpReq.Params.Arguments) > 0 {
-					// Decode owner/repo as RawMessage so a wrongly typed field
-					// doesn't prevent the other from being extracted.
-					var args struct {
-						Owner json.RawMessage `json:"owner"`
-						Repo  json.RawMessage `json:"repo"`
-					}
-					if err := json.Unmarshal(mcpReq.Params.Arguments, &args); err == nil {
-						if len(args.Owner) > 0 {
-							var owner string
-							if err := json.Unmarshal(args.Owner, &owner); err == nil {
-								methodInfo.Owner = owner
-							}
-						}
-						if len(args.Repo) > 0 {
-							var repo string
-							if err := json.Unmarshal(args.Repo, &repo); err == nil {
-								methodInfo.Repo = repo
-							}
-						}
-					}
-				}
-			case "prompts/get":
-				methodInfo.ItemName = mcpReq.Params.Name
-			case "resources/read":
-				methodInfo.ItemName = mcpReq.Params.URI
-			default:
-				// Whatever
 			}
 
 			// Store the parsed info in context
@@ -137,4 +90,26 @@ func WithMCPParse() func(http.Handler) http.Handler {
 		}
 		return http.HandlerFunc(fn)
 	}
+}
+
+func parseMCPMethodInfo(body []byte) (*ghcontext.MCPMethodInfo, error) {
+	var mcpReq mcpJSONRPCRequest
+	if err := json.Unmarshal(body, &mcpReq); err != nil {
+		return nil, err
+	}
+	if mcpReq.JSONRPC != "2.0" || mcpReq.Method == "" {
+		return nil, nil
+	}
+
+	methodInfo := &ghcontext.MCPMethodInfo{Method: mcpReq.Method}
+	switch mcpReq.Method {
+	case "tools/call":
+		methodInfo.ItemName = mcpReq.Params.Name
+		methodInfo.RawArguments = mcpReq.Params.Arguments
+	case "prompts/get":
+		methodInfo.ItemName = mcpReq.Params.Name
+	case "resources/read":
+		methodInfo.ItemName = mcpReq.Params.URI
+	}
+	return methodInfo, nil
 }
