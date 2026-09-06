@@ -65,8 +65,8 @@ The GitHub MCP Server can be installed using several methods. **Docker is the mo
 ### 🔨 Build from Source (Advanced Users)
 - **Pros**: Latest features, full customization, no external dependencies
 - **Cons**: Requires Go development environment, more complex setup
-- **Prerequisites**: [Go 1.24+](https://go.dev/doc/install)
-- **Build command**: `go build -o github-mcp-server cmd/github-mcp-server/main.go`
+- **Prerequisites**: [Go](https://go.dev/doc/install), at least the version specified in [`go.mod`](../../go.mod)
+- **Build command**: `go build -o github-mcp-server ./cmd/github-mcp-server`
 - **Best for**: Developers who want the latest features or need custom modifications
 
 ### Important Notes on the GitHub MCP Server
@@ -82,7 +82,7 @@ All installations with Personal Access Tokens (PAT) require:
 
 Optional (depending on installation method):
 - **Docker** (for Docker-based installations): [Download Docker](https://www.docker.com/)
-- **Go 1.24+** (for building from source): [Install Go](https://go.dev/doc/install)
+- **Go** (for building from source, at least the version in [`go.mod`](../../go.mod)): [Install Go](https://go.dev/doc/install)
 
 ## Security Best Practices
 
@@ -109,4 +109,3 @@ After installation, you may want to explore:
 - **Toolsets**: Enable/disable specific GitHub API capabilities
 - **Read-Only Mode**: Restrict to read-only operations
 - **Lockdown Mode**: Hide public issue details created by users without push access
-
