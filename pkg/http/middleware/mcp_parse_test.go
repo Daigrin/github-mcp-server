@@ -185,6 +185,65 @@ func TestWithMCPParse(t *testing.T) {
 	}
 }
 
+func TestWithMCPParse_ArgumentTypes(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments string
+		owner     string
+		repo      string
+	}{
+		{name: "empty object", arguments: `{}`},
+		{name: "null arguments", arguments: `null`},
+		{name: "array arguments", arguments: `[]`},
+		{name: "numeric arguments", arguments: `123`},
+		{name: "owner only", arguments: `{"owner":"github"}`, owner: "github"},
+		{name: "repo only", arguments: `{"repo":"server"}`, repo: "server"},
+		{name: "object owner", arguments: `{"owner":{},"repo":"server"}`, repo: "server"},
+		{name: "array owner", arguments: `{"owner":[],"repo":"server"}`, repo: "server"},
+		{name: "boolean owner", arguments: `{"owner":true,"repo":"server"}`, repo: "server"},
+		{name: "null owner", arguments: `{"owner":null,"repo":"server"}`, repo: "server"},
+		{name: "numeric repo", arguments: `{"owner":"github","repo":123}`, owner: "github"},
+		{name: "object repo", arguments: `{"owner":"github","repo":{}}`, owner: "github"},
+		{name: "array repo", arguments: `{"owner":"github","repo":[]}`, owner: "github"},
+		{name: "boolean repo", arguments: `{"owner":"github","repo":false}`, owner: "github"},
+		{name: "null repo", arguments: `{"owner":"github","repo":null}`, owner: "github"},
+		{name: "both invalid", arguments: `{"owner":[],"repo":{}}`},
+		{name: "last duplicate wins", arguments: `{"owner":123,"owner":"github","repo":"server","repo":null}`, owner: "github"},
+		{
+			name: "large nested extra arguments",
+			arguments: `{"extra":[` +
+				strings.Repeat(`{"owner":"ignored","repo":"ignored","content":"`+strings.Repeat("x", 1024)+`"},`, 127) +
+				`{}],"owner":"github","repo":"server"}`,
+			owner: "github",
+			repo:  "server",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"test_tool","arguments":` + tt.arguments + `}}`
+			var nextCalled bool
+			next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				nextCalled = true
+				info, ok := ghcontext.MCPMethod(r.Context())
+				require.True(t, ok)
+				require.NotNil(t, info)
+				assert.Equal(t, "tools/call", info.Method)
+				assert.Equal(t, "test_tool", info.ItemName)
+				assert.Equal(t, tt.owner, info.Owner)
+				assert.Equal(t, tt.repo, info.Repo)
+
+				restoredBody, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				assert.Equal(t, body, string(restoredBody))
+			})
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+			WithMCPParse()(next).ServeHTTP(httptest.NewRecorder(), req)
+			assert.True(t, nextCalled)
+		})
+	}
+}
+
 func TestWithMCPParse_BodyRestoration(t *testing.T) {
 	originalBody := `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"test_tool"}}`
 

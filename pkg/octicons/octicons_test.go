@@ -15,6 +15,31 @@ import (
 //go:embed icons/*.png
 var iconPNGs embed.FS
 
+func TestLoadDataURIsLineEndings(t *testing.T) {
+	const lightURI = "data:image/png;base64,bGlnaHQ="
+	const darkURI = "data:image/png;base64,ZGFyaw=="
+	for _, tc := range []struct {
+		name    string
+		newline string
+	}{
+		{name: "LF", newline: "\n"},
+		{name: "CRLF", newline: "\r\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			contents := strings.Join([]string{
+				"repo-light\t" + lightURI,
+				"repo-dark\t" + darkURI,
+				"",
+			}, tc.newline)
+
+			assert.Equal(t, map[dataURIKey]string{
+				{name: "repo", theme: ThemeLight}: lightURI,
+				{name: "repo", theme: ThemeDark}:  darkURI,
+			}, loadDataURIs(contents))
+		})
+	}
+}
+
 func TestDataURI(t *testing.T) {
 	tests := []struct {
 		name        string
