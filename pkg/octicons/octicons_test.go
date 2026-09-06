@@ -15,6 +15,54 @@ import (
 //go:embed icons/*.png
 var iconPNGs embed.FS
 
+func TestLoadDataURIsLineEndings(t *testing.T) {
+	const lightURI = "data:image/png;base64,bGlnaHQ="
+	const darkURI = "data:image/png;base64,ZGFyaw=="
+	for _, tc := range []struct {
+		name             string
+		newline          string
+		omitFinalNewline bool
+	}{
+		{name: "LF", newline: "\n"},
+		{name: "CRLF", newline: "\r\n"},
+		{name: "LF without final newline", newline: "\n", omitFinalNewline: true},
+		{name: "CRLF without final newline", newline: "\r\n", omitFinalNewline: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			contents := strings.Join([]string{
+				"repo-light\t" + lightURI,
+				"repo-dark\t" + darkURI,
+				"",
+			}, tc.newline)
+			if tc.omitFinalNewline {
+				contents = strings.TrimSuffix(contents, tc.newline)
+			}
+
+			assert.Equal(t, map[dataURIKey]string{
+				{name: "repo", theme: ThemeLight}: lightURI,
+				{name: "repo", theme: ThemeDark}:  darkURI,
+			}, loadDataURIs(contents))
+		})
+	}
+}
+
+func TestLoadDataURIsInvalidEntries(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		contents string
+	}{
+		{name: "empty manifest", contents: ""},
+		{name: "missing tab", contents: "repo-light data:image/png;base64,bGlnaHQ="},
+		{name: "missing name", contents: "-light\tdata:image/png;base64,bGlnaHQ="},
+		{name: "wrong media type", contents: "repo-light\tdata:image/svg+xml;base64,bGlnaHQ="},
+		{name: "unknown theme", contents: "repo-other\tdata:image/png;base64,bGlnaHQ="},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Panics(t, func() { loadDataURIs(tc.contents) })
+		})
+	}
+}
+
 func TestDataURI(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -86,6 +134,7 @@ func TestDataURIForEveryEmbeddedIcon(t *testing.T) {
 			require.NoError(t, err)
 
 			dataURI := DataURI(name, theme)
+			assert.Equal(t, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(png), dataURI)
 			require.True(t, strings.HasPrefix(dataURI, "data:image/png;base64,"))
 			encodedPNG := strings.TrimPrefix(dataURI, "data:image/png;base64,")
 			decodedPNG, err := base64.StdEncoding.DecodeString(encodedPNG)

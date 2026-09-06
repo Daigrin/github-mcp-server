@@ -22,11 +22,22 @@ type MCPMethodInfo struct {
 	ItemName string
 	// RawArguments contains the unmaterialized tool arguments for tools/call requests.
 	RawArguments json.RawMessage
+	// Deprecated: Owner is retained for source compatibility and is not populated
+	// by the parse middleware. Use DecodeArguments for call-specific values.
+	Owner string
+	// Deprecated: Repo is retained for source compatibility and is not populated
+	// by the parse middleware. Use DecodeArguments for call-specific values.
+	Repo string
+	// Deprecated: Arguments is retained for source compatibility and is not
+	// populated by the parse middleware. Use DecodeArguments instead.
+	Arguments map[string]any
 }
 
 // DecodeArguments materializes tool arguments when request middleware needs
 // call-specific values. Invalid argument shapes are returned to the caller so
 // the request can continue to the tool handler's normal validation path.
+// Each call decodes RawArguments anew; decoded maps are not cached and the
+// deprecated fields are neither read nor populated.
 func (info *MCPMethodInfo) DecodeArguments() (map[string]any, error) {
 	if len(info.RawArguments) == 0 {
 		return nil, nil

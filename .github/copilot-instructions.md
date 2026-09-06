@@ -5,7 +5,7 @@
 This is the **GitHub MCP Server**, a Model Context Protocol (MCP) server that connects AI tools to GitHub's platform. It enables AI agents to manage repositories, issues, pull requests, workflows, and more through natural language.
 
 **Key Details:**
-- **Language:** Go 1.24+ (~38k lines of code)
+- **Language:** Go (minimum version specified in `go.mod`)
 - **Type:** MCP server application with CLI interface
 - **Primary Package:** github-mcp-server (stdio MCP server - **this is the main focus**)
 - **Secondary Package:** mcpcurl (testing utility - don't break it, but not the priority)
@@ -92,7 +92,7 @@ go test ./pkg/github -run TestGetMe
 
 ### Key Configuration Files
 
-- **go.mod / go.sum:** Go module dependencies (Go 1.24.0+)
+- **go.mod / go.sum:** Go module dependencies and minimum supported Go version
 - **.golangci.yml:** Linter configuration (v2 format, ~15 linters enabled)
 - **Dockerfile:** Multi-stage build (golang:1.25.8-alpine → distroless)
 - **server.json:** MCP server metadata for registry
@@ -112,10 +112,10 @@ go test ./pkg/github -run TestGetMe
 
 ## GitHub Workflows (CI/CD)
 
-All workflows run on push/PR unless noted. Located in `.github/workflows/`:
+Workflow triggers vary; consult the files in `.github/workflows/`:
 
 1. **go.yml** - Build and test on ubuntu/windows/macos. Runs `script/test` and builds binary
-2. **lint.yml** - Runs golangci-lint-action v2.5 (GitHub Action) with actions/setup-go stable
+2. **lint.yml** - Runs golangci-lint-action v9 with Go 1.25 and golangci-lint v2.9.0, matching the version enforced by `script/lint`
 3. **docs-check.yml** - Verifies README.md is up-to-date by running generate-docs and checking git diff
 4. **code-scanning.yml** - CodeQL security analysis for Go and GitHub Actions
 5. **license-check.yml** - Runs `script/licenses-check` to validate compliance
@@ -123,7 +123,7 @@ All workflows run on push/PR unless noted. Located in `.github/workflows/`:
 7. **goreleaser.yml** - Creates releases (main branch only)
 8. **registry-releaser.yml** - Updates MCP registry
 
-**All of these must pass for PR merge.** If docs-check fails, run `script/generate-docs` and commit changes.
+**Applicable PR checks must pass for merge.** Publishing workflows run on their configured release events, not on every PR. CodeQL may be intentionally skipped on forks. If docs-check fails, run `script/generate-docs` and commit changes.
 
 ## Testing Guidelines
 

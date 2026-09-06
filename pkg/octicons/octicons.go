@@ -22,11 +22,12 @@ type dataURIKey struct {
 	theme Theme
 }
 
-var dataURIs = loadDataURIs()
+var dataURIs = loadDataURIs(embeddedDataURIs)
 
-func loadDataURIs() map[dataURIKey]string {
+func loadDataURIs(contents string) map[dataURIKey]string {
 	dataURIs := make(map[dataURIKey]string)
-	for line := range strings.SplitSeq(strings.TrimSpace(embeddedDataURIs), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(contents), "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		filename, dataURI, ok := strings.Cut(line, "\t")
 		separator := strings.LastIndexByte(filename, '-')
 		if !ok || separator <= 0 || !strings.HasPrefix(dataURI, "data:image/png;base64,") {
