@@ -209,8 +209,7 @@ func TestWithMCPParse(t *testing.T) {
 				}
 				if tt.expectedArgs != nil {
 					assert.Equal(t, tt.expectedArgs, decodedArgs)
-					decodedArgs["cached"] = true
-					assert.Equal(t, true, capturedInfo.Arguments["cached"])
+					assert.Equal(t, decodedArgs, capturedInfo.Arguments)
 				}
 			} else {
 				assert.False(t, infoCaptured, "MCPMethodInfo should not be present in context")

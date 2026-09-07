@@ -1,6 +1,7 @@
 package context
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,12 +22,11 @@ func TestMCPMethodInfoDecodeArguments(t *testing.T) {
 			"repo":  "github-mcp-server",
 			"path":  "README.md",
 		}, decoded)
-		decoded["cached"] = true
 
 		cached, err := info.DecodeArguments()
 		require.NoError(t, err)
 		assert.Equal(t, decoded, cached)
-		assert.Equal(t, true, info.Arguments["cached"])
+		assert.Equal(t, decoded, info.Arguments)
 	})
 
 	t.Run("returns predecoded arguments when present", func(t *testing.T) {
@@ -70,5 +70,32 @@ func TestMCPMethodInfoDecodeArguments(t *testing.T) {
 		decoded, err := info.DecodeArguments()
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"owner": "lower", "Owner": "upper"}, decoded)
+	})
+
+	t.Run("concurrent decode is safe", func(t *testing.T) {
+		info := &MCPMethodInfo{
+			RawArguments: []byte(`{"owner":"github","repo":"github-mcp-server","nested":{"path":"README.md"}}`),
+		}
+
+		var wg sync.WaitGroup
+		errors := make(chan error, 32)
+		for range 32 {
+			wg.Go(func() {
+				decoded, err := info.DecodeArguments()
+				if err != nil {
+					errors <- err
+					return
+				}
+				if decoded["owner"] != "github" {
+					errors <- assert.AnError
+				}
+			})
+		}
+		wg.Wait()
+		close(errors)
+
+		for err := range errors {
+			require.NoError(t, err)
+		}
 	})
 }

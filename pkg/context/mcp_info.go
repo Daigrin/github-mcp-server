@@ -3,6 +3,7 @@ package context
 import (
 	"context"
 	"encoding/json"
+	"sync"
 )
 
 type mcpMethodInfoCtx string
@@ -34,25 +35,37 @@ type MCPMethodInfo struct {
 	Arguments map[string]any
 	// RawArguments contains the unmaterialized tool arguments for tools/call requests.
 	RawArguments json.RawMessage
+
+	decodeMu   sync.Mutex
+	decodeDone bool
+	decodeErr  error
 }
 
 // DecodeArguments materializes tool arguments when request middleware needs
 // call-specific values. Invalid argument shapes are returned to the caller so
 // the request can continue to the tool handler's normal validation path.
 func (info *MCPMethodInfo) DecodeArguments() (map[string]any, error) {
+	info.decodeMu.Lock()
+	defer info.decodeMu.Unlock()
+
 	if info.Arguments != nil {
 		return info.Arguments, nil
 	}
-	if len(info.RawArguments) == 0 {
-		return nil, nil
+	if info.decodeDone || len(info.RawArguments) == 0 {
+		info.decodeDone = true
+		return nil, info.decodeErr
 	}
 
 	var arguments map[string]any
 	if err := json.Unmarshal(info.RawArguments, &arguments); err != nil {
+		info.decodeErr = err
+		info.decodeDone = true
 		return nil, err
 	}
 	info.Arguments = arguments
-	return arguments, nil
+	info.decodeDone = true
+
+	return info.Arguments, info.decodeErr
 }
 
 // WithMCPMethodInfo stores the MCPMethodInfo in the context.
