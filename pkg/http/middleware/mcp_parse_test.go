@@ -95,6 +95,16 @@ func TestWithMCPParse(t *testing.T) {
 			expectedRepo:   "github-mcp-server",
 		},
 		{
+			name:           "tools/call extracts valid owner when repo has non-string type",
+			method:         http.MethodPost,
+			path:           "/mcp",
+			body:           `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"owner":"github","repo":123}}}`,
+			expectInfo:     true,
+			expectedMethod: "tools/call",
+			expectedItem:   "get_file_contents",
+			expectedOwner:  "github",
+		},
+		{
 			name:           "tools/call with invalid arguments JSON continues without args",
 			method:         http.MethodPost,
 			path:           "/mcp",
