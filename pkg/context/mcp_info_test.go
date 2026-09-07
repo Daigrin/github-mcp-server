@@ -45,6 +45,10 @@ func TestMCPMethodInfoDecodeArguments(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, decoded)
 		assert.Nil(t, info.Arguments)
+
+		decoded, err = info.DecodeArguments()
+		require.NoError(t, err)
+		assert.Nil(t, decoded)
 	})
 
 	t.Run("non object arguments return an error", func(t *testing.T) {
@@ -70,6 +74,18 @@ func TestMCPMethodInfoDecodeArguments(t *testing.T) {
 		decoded, err := info.DecodeArguments()
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"owner": "lower", "Owner": "upper"}, decoded)
+	})
+
+	t.Run("cached decode survives compatibility field mutation", func(t *testing.T) {
+		info := &MCPMethodInfo{RawArguments: []byte(`{"owner":"github"}`)}
+
+		decoded, err := info.DecodeArguments()
+		require.NoError(t, err)
+		info.Arguments = nil
+
+		cached, err := info.DecodeArguments()
+		require.NoError(t, err)
+		assert.Equal(t, decoded, cached)
 	})
 
 	t.Run("concurrent decode is safe", func(t *testing.T) {

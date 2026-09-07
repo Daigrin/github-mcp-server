@@ -36,9 +36,10 @@ type MCPMethodInfo struct {
 	// RawArguments contains the unmaterialized tool arguments for tools/call requests.
 	RawArguments json.RawMessage
 
-	decodeMu   sync.Mutex
-	decodeDone bool
-	decodeErr  error
+	decodeMu         sync.Mutex
+	decodeDone       bool
+	decodeErr        error
+	decodedArguments map[string]any
 }
 
 // DecodeArguments materializes tool arguments when request middleware needs
@@ -48,12 +49,17 @@ func (info *MCPMethodInfo) DecodeArguments() (map[string]any, error) {
 	info.decodeMu.Lock()
 	defer info.decodeMu.Unlock()
 
-	if info.Arguments != nil {
-		return info.Arguments, nil
+	if info.decodeDone {
+		return info.decodedArguments, info.decodeErr
 	}
-	if info.decodeDone || len(info.RawArguments) == 0 {
+	if info.Arguments != nil {
+		info.decodedArguments = info.Arguments
 		info.decodeDone = true
-		return nil, info.decodeErr
+		return info.decodedArguments, nil
+	}
+	if len(info.RawArguments) == 0 {
+		info.decodeDone = true
+		return info.decodedArguments, info.decodeErr
 	}
 
 	var arguments map[string]any
@@ -62,10 +68,11 @@ func (info *MCPMethodInfo) DecodeArguments() (map[string]any, error) {
 		info.decodeDone = true
 		return nil, err
 	}
+	info.decodedArguments = arguments
 	info.Arguments = arguments
 	info.decodeDone = true
 
-	return info.Arguments, info.decodeErr
+	return info.decodedArguments, info.decodeErr
 }
 
 // WithMCPMethodInfo stores the MCPMethodInfo in the context.
