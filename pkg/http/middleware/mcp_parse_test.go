@@ -23,6 +23,8 @@ func TestWithMCPParse(t *testing.T) {
 		expectedMethod  string
 		expectedItem    string
 		expectedRaw     string
+		expectedOwner   string
+		expectedRepo    string
 		expectedArgs    map[string]any
 		expectArgsError bool
 	}{
@@ -94,6 +96,8 @@ func TestWithMCPParse(t *testing.T) {
 			expectedMethod: "tools/call",
 			expectedItem:   "get_file_contents",
 			expectedRaw:    `{"owner":"github","repo":"github-mcp-server","path":"README.md"}`,
+			expectedOwner:  "github",
+			expectedRepo:   "github-mcp-server",
 			expectedArgs:   map[string]any{"owner": "github", "repo": "github-mcp-server", "path": "README.md"},
 		},
 		{
@@ -106,6 +110,40 @@ func TestWithMCPParse(t *testing.T) {
 			expectedItem:    "get_file_contents",
 			expectedRaw:     `"not an object"`,
 			expectArgsError: true,
+		},
+		{
+			name:           "tools/call keeps valid owner when repo has invalid type",
+			method:         http.MethodPost,
+			path:           "/mcp",
+			body:           `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"owner":"github","repo":123,"path":"README.md"}}}`,
+			expectInfo:     true,
+			expectedMethod: "tools/call",
+			expectedItem:   "get_file_contents",
+			expectedRaw:    `{"owner":"github","repo":123,"path":"README.md"}`,
+			expectedOwner:  "github",
+			expectedArgs:   map[string]any{"owner": "github", "repo": 123.0, "path": "README.md"},
+		},
+		{
+			name:           "tools/call ignores non exact owner key casing",
+			method:         http.MethodPost,
+			path:           "/mcp",
+			body:           `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"Owner":"github","repo":"github-mcp-server"}}}`,
+			expectInfo:     true,
+			expectedMethod: "tools/call",
+			expectedItem:   "get_file_contents",
+			expectedRaw:    `{"Owner":"github","repo":"github-mcp-server"}`,
+			expectedRepo:   "github-mcp-server",
+			expectedArgs:   map[string]any{"Owner": "github", "repo": "github-mcp-server"},
+		},
+		{
+			name:           "tools/call with null arguments keeps empty compatibility fields",
+			method:         http.MethodPost,
+			path:           "/mcp",
+			body:           `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":null}}`,
+			expectInfo:     true,
+			expectedMethod: "tools/call",
+			expectedItem:   "get_file_contents",
+			expectedRaw:    `null`,
 		},
 		{
 			name:           "prompts/get parses name",
@@ -161,6 +199,8 @@ func TestWithMCPParse(t *testing.T) {
 				if tt.expectedRaw != "" {
 					assert.JSONEq(t, tt.expectedRaw, string(capturedInfo.RawArguments))
 				}
+				assert.Equal(t, tt.expectedOwner, capturedInfo.Owner)
+				assert.Equal(t, tt.expectedRepo, capturedInfo.Repo)
 				decodedArgs, err := capturedInfo.DecodeArguments()
 				if tt.expectArgsError {
 					assert.Error(t, err)
@@ -169,6 +209,7 @@ func TestWithMCPParse(t *testing.T) {
 				}
 				if tt.expectedArgs != nil {
 					assert.Equal(t, tt.expectedArgs, decodedArgs)
+					assert.Equal(t, decodedArgs, capturedInfo.Arguments)
 				}
 			} else {
 				assert.False(t, infoCaptured, "MCPMethodInfo should not be present in context")
@@ -197,6 +238,47 @@ func TestWithMCPParseRetainsLargeArgumentsWithoutMaterializingThem(t *testing.T)
 
 	require.NotNil(t, capturedInfo)
 	assert.Equal(t, json.RawMessage(rawArguments), capturedInfo.RawArguments)
+	assert.Empty(t, capturedInfo.Owner)
+	assert.Empty(t, capturedInfo.Repo)
+}
+
+func TestWithMCPParseCompatibilityFieldsUseExactKeysAndLastDuplicates(t *testing.T) {
+	body := `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"owner":"first","owner":"second","repo":"one","repo":"two","nested":{"keep":["all",{"payload":true}]}}}}`
+
+	var capturedInfo *ghcontext.MCPMethodInfo
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		capturedInfo, _ = ghcontext.MCPMethod(r.Context())
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	WithMCPParse()(next).ServeHTTP(httptest.NewRecorder(), request)
+
+	require.NotNil(t, capturedInfo)
+	assert.Equal(t, `{"owner":"first","owner":"second","repo":"one","repo":"two","nested":{"keep":["all",{"payload":true}]}}`, string(capturedInfo.RawArguments))
+	assert.Equal(t, "second", capturedInfo.Owner)
+	assert.Equal(t, "two", capturedInfo.Repo)
+
+	decodedArgs, err := capturedInfo.DecodeArguments()
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"owner": "second",
+		"repo":  "two",
+		"nested": map[string]any{
+			"keep": []any{"all", map[string]any{"payload": true}},
+		},
+	}, decodedArgs)
+}
+
+func BenchmarkParseMCPMethodInfoToolsCall(b *testing.B) {
+	body := []byte(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"owner":"github","repo":"github-mcp-server","nested":{"items":[{"payload":"` + strings.Repeat("x", 4096) + `"}]}}}}`)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		info, err := parseMCPMethodInfo(body)
+		if err != nil || info == nil {
+			b.Fatalf("parseMCPMethodInfo() error = %v, info = %v", err, info)
+		}
+	}
 }
 
 func TestWithMCPParse_BodyRestoration(t *testing.T) {

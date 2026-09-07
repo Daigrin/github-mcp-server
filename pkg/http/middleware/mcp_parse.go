@@ -106,10 +106,29 @@ func parseMCPMethodInfo(body []byte) (*ghcontext.MCPMethodInfo, error) {
 	case "tools/call":
 		methodInfo.ItemName = mcpReq.Params.Name
 		methodInfo.RawArguments = mcpReq.Params.Arguments
+		populateToolArgumentCompatibilityFields(methodInfo)
 	case "prompts/get":
 		methodInfo.ItemName = mcpReq.Params.Name
 	case "resources/read":
 		methodInfo.ItemName = mcpReq.Params.URI
 	}
 	return methodInfo, nil
+}
+
+func populateToolArgumentCompatibilityFields(methodInfo *ghcontext.MCPMethodInfo) {
+	if len(methodInfo.RawArguments) == 0 {
+		return
+	}
+
+	var arguments map[string]json.RawMessage
+	if err := json.Unmarshal(methodInfo.RawArguments, &arguments); err != nil {
+		return
+	}
+
+	if owner, ok := arguments["owner"]; ok {
+		_ = json.Unmarshal(owner, &methodInfo.Owner)
+	}
+	if repo, ok := arguments["repo"]; ok {
+		_ = json.Unmarshal(repo, &methodInfo.Repo)
+	}
 }
