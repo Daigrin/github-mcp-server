@@ -20,6 +20,18 @@ type MCPMethodInfo struct {
 	// ItemName is the name of the specific item being accessed (tool name, resource URI, prompt name)
 	// Only populated for call/get methods (tools/call, prompts/get, resources/read)
 	ItemName string
+	// Owner is the repository owner parsed from tools/call arguments, when available.
+	//
+	// Prefer RawArguments and DecodeArguments in new code.
+	Owner string
+	// Repo is the repository name parsed from tools/call arguments, when available.
+	//
+	// Prefer RawArguments and DecodeArguments in new code.
+	Repo string
+	// Arguments contains the decoded tools/call arguments after DecodeArguments is called.
+	//
+	// Prefer RawArguments and DecodeArguments in new code.
+	Arguments map[string]any
 	// RawArguments contains the unmaterialized tool arguments for tools/call requests.
 	RawArguments json.RawMessage
 }
@@ -28,6 +40,9 @@ type MCPMethodInfo struct {
 // call-specific values. Invalid argument shapes are returned to the caller so
 // the request can continue to the tool handler's normal validation path.
 func (info *MCPMethodInfo) DecodeArguments() (map[string]any, error) {
+	if info.Arguments != nil {
+		return info.Arguments, nil
+	}
 	if len(info.RawArguments) == 0 {
 		return nil, nil
 	}
@@ -36,6 +51,7 @@ func (info *MCPMethodInfo) DecodeArguments() (map[string]any, error) {
 	if err := json.Unmarshal(info.RawArguments, &arguments); err != nil {
 		return nil, err
 	}
+	info.Arguments = arguments
 	return arguments, nil
 }
 
