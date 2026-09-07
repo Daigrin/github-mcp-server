@@ -102,12 +102,16 @@ func WithMCPParse() func(http.Handler) http.Handler {
 				// arguments payload on every tools/call request.
 				if len(mcpReq.Params.Arguments) > 0 {
 					var args struct {
-						Owner string `json:"owner"`
-						Repo  string `json:"repo"`
+						Owner json.RawMessage `json:"owner"`
+						Repo  json.RawMessage `json:"repo"`
 					}
 					if err := json.Unmarshal(mcpReq.Params.Arguments, &args); err == nil {
-						methodInfo.Owner = args.Owner
-						methodInfo.Repo = args.Repo
+						if len(args.Owner) > 0 {
+							_ = json.Unmarshal(args.Owner, &methodInfo.Owner)
+						}
+						if len(args.Repo) > 0 {
+							_ = json.Unmarshal(args.Repo, &methodInfo.Repo)
+						}
 					}
 				}
 			case "prompts/get":
