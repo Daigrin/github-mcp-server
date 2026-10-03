@@ -22,6 +22,10 @@ type MCPMethodInfo struct {
 	// ItemName is the name of the specific item being accessed (tool name, resource URI, prompt name)
 	// Only populated for call/get methods (tools/call, prompts/get, resources/read)
 	ItemName string
+	// Owner is the repository owner from tool call arguments, if present.
+	Owner string
+	// Repo is the repository name from tool call arguments, if present.
+	Repo string
 	// RawArguments contains the unmaterialized tool arguments for tools/call requests.
 	RawArguments json.RawMessage
 	// ProtocolVersion and ClientCapabilities describe the requesting MCP client

@@ -23,6 +23,8 @@ func TestWithMCPParse(t *testing.T) {
 		expectInfo       bool
 		expectedMethod   string
 		expectedItem     string
+		expectedOwner    string
+		expectedRepo     string
 		expectedRaw      string
 		expectedArgs     map[string]any
 		expectedProtocol string
@@ -109,6 +111,8 @@ func TestWithMCPParse(t *testing.T) {
 			expectInfo:     true,
 			expectedMethod: "tools/call",
 			expectedItem:   "get_file_contents",
+			expectedOwner:  "github",
+			expectedRepo:   "github-mcp-server",
 			expectedRaw:    `{"owner":"github","repo":"github-mcp-server","path":"README.md"}`,
 			expectedArgs:   map[string]any{"owner": "github", "repo": "github-mcp-server", "path": "README.md"},
 		},
@@ -174,6 +178,8 @@ func TestWithMCPParse(t *testing.T) {
 				require.NotNil(t, capturedInfo)
 				assert.Equal(t, tt.expectedMethod, capturedInfo.Method)
 				assert.Equal(t, tt.expectedItem, capturedInfo.ItemName)
+				assert.Equal(t, tt.expectedOwner, capturedInfo.Owner)
+				assert.Equal(t, tt.expectedRepo, capturedInfo.Repo)
 				assert.Equal(t, tt.expectedProtocol, capturedInfo.ProtocolVersion)
 				if tt.expectedForm {
 					require.NotNil(t, capturedInfo.ClientCapabilities)
@@ -195,6 +201,78 @@ func TestWithMCPParse(t *testing.T) {
 			} else {
 				assert.False(t, infoCaptured, "MCPMethodInfo should not be present in context")
 			}
+		})
+	}
+}
+
+func TestWithMCPParseOwnerRepo(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments string
+		owner     string
+		repo      string
+	}{
+		{
+			name:      "owner survives numeric repo",
+			arguments: `{"owner":"github","repo":123}`,
+			owner:     "github",
+		},
+		{
+			name:      "repo survives object owner",
+			arguments: `{"owner":{"name":"github"},"repo":"github-mcp-server"}`,
+			repo:      "github-mcp-server",
+		},
+		{
+			name:      "owner survives array repo",
+			arguments: `{"owner":"github","repo":["github-mcp-server"]}`,
+			owner:     "github",
+		},
+		{
+			name:      "repo survives boolean owner",
+			arguments: `{"owner":false,"repo":"github-mcp-server"}`,
+			repo:      "github-mcp-server",
+		},
+		{
+			name:      "null owner",
+			arguments: `{"owner":null,"repo":"github-mcp-server"}`,
+			repo:      "github-mcp-server",
+		},
+		{
+			name:      "nested arguments are ignored",
+			arguments: `{"owner":"github","repo":"github-mcp-server","extra":{"owner":"other","items":[1,{"repo":"other"}]}}`,
+			owner:     "github",
+			repo:      "github-mcp-server",
+		},
+		{
+			name:      "duplicate field uses last value",
+			arguments: `{"owner":"github","owner":null,"repo":"github-mcp-server"}`,
+			repo:      "github-mcp-server",
+		},
+		{name: "empty object", arguments: `{}`},
+		{name: "null arguments", arguments: `null`},
+		{name: "array arguments", arguments: `["github","github-mcp-server"]`},
+		{name: "string arguments", arguments: `"github"`},
+		{name: "numeric arguments", arguments: `123`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"test_tool","arguments":` + tt.arguments + `}}`
+			next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				info, ok := ghcontext.MCPMethod(r.Context())
+				require.True(t, ok)
+				require.NotNil(t, info)
+				assert.Equal(t, "tools/call", info.Method)
+				assert.Equal(t, "test_tool", info.ItemName)
+				assert.Equal(t, tt.owner, info.Owner)
+				assert.Equal(t, tt.repo, info.Repo)
+				assert.JSONEq(t, tt.arguments, string(info.RawArguments))
+				restoredBody, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				assert.Equal(t, body, string(restoredBody))
+			})
+			request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+			WithMCPParse()(next).ServeHTTP(httptest.NewRecorder(), request)
 		})
 	}
 }

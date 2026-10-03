@@ -115,6 +115,17 @@ func parseMCPMethodInfo(body []byte) (*ghcontext.MCPMethodInfo, error) {
 	case "tools/call":
 		methodInfo.ItemName = mcpReq.Params.Name
 		methodInfo.RawArguments = mcpReq.Params.Arguments
+		if len(methodInfo.RawArguments) > 0 {
+			var args struct {
+				Owner json.RawMessage `json:"owner"`
+				Repo  json.RawMessage `json:"repo"`
+			}
+			if err := json.Unmarshal(methodInfo.RawArguments, &args); err == nil {
+				// Decode independently so an invalid type does not discard the other field.
+				_ = json.Unmarshal(args.Owner, &methodInfo.Owner)
+				_ = json.Unmarshal(args.Repo, &methodInfo.Repo)
+			}
+		}
 	case "prompts/get":
 		methodInfo.ItemName = mcpReq.Params.Name
 	case "resources/read":
