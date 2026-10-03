@@ -1568,3 +1568,59 @@ func TestAssignCopilotToIssueWithIntent(t *testing.T) {
 		})
 	}
 }
+
+func TestPollLinkedCopilotPR(t *testing.T) {
+	t.Run("lookup errors are returned after retries", func(t *testing.T) {
+		lookupErr := fmt.Errorf("lookup failed")
+		attempts := 0
+		pr, err := pollLinkedCopilotPR(
+			context.Background(),
+			PollConfig{MaxAttempts: 3},
+			func(context.Context) (*linkedPullRequest, error) {
+				attempts++
+				return nil, lookupErr
+			},
+			nil,
+		)
+
+		require.Nil(t, pr)
+		require.ErrorIs(t, err, lookupErr)
+		assert.Equal(t, 3, attempts)
+	})
+
+	t.Run("cancellation interrupts the delay", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		attempts := 0
+		pr, err := pollLinkedCopilotPR(
+			ctx,
+			PollConfig{MaxAttempts: 2, Delay: time.Hour},
+			func(context.Context) (*linkedPullRequest, error) {
+				attempts++
+				cancel()
+				return nil, nil
+			},
+			nil,
+		)
+
+		require.Nil(t, pr)
+		require.ErrorIs(t, err, context.Canceled)
+		assert.Equal(t, 1, attempts)
+	})
+
+	t.Run("no match without lookup errors is still pending", func(t *testing.T) {
+		attempts := 0
+		pr, err := pollLinkedCopilotPR(
+			context.Background(),
+			PollConfig{MaxAttempts: 2},
+			func(context.Context) (*linkedPullRequest, error) {
+				attempts++
+				return nil, nil
+			},
+			nil,
+		)
+
+		require.NoError(t, err)
+		require.Nil(t, pr)
+		assert.Equal(t, 2, attempts)
+	})
+}

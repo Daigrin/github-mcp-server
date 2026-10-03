@@ -88,6 +88,62 @@ func getPollConfig(ctx context.Context) PollConfig {
 	return PollConfig{MaxAttempts: 9, Delay: 1 * time.Second}
 }
 
+func pollLinkedCopilotPR(
+	ctx context.Context,
+	config PollConfig,
+	lookup func(context.Context) (*linkedPullRequest, error),
+	onAttempt func(int),
+) (*linkedPullRequest, error) {
+	var lastErr error
+	for attempt := range config.MaxAttempts {
+		if attempt > 0 && config.Delay > 0 {
+			timer := time.NewTimer(config.Delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if onAttempt != nil {
+			onAttempt(attempt)
+		}
+
+		pr, err := lookup(ctx)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if pr != nil {
+			return pr, nil
+		}
+	}
+	return nil, lastErr
+}
+
+func addCopilotPollingResult(result map[string]any, linkedPR *linkedPullRequest, pollErr error) {
+	if linkedPR != nil {
+		result["pull_request"] = map[string]any{
+			"number": linkedPR.Number,
+			"url":    linkedPR.URL,
+			"title":  linkedPR.Title,
+			"state":  linkedPR.State,
+		}
+		result["message"] = "successfully assigned copilot to issue - pull request created"
+		return
+	}
+	if pollErr != nil {
+		result["message"] = "successfully assigned copilot to issue - pull request status could not be confirmed"
+		result["note"] = fmt.Sprintf("Unable to confirm whether a pull request was created: %v. Check the issue timeline for updates.", pollErr)
+		return
+	}
+	result["message"] = "successfully assigned copilot to issue - pull request pending"
+	result["note"] = "The pull request may still be in progress. Once created, the PR number can be used to check job status, or check the issue timeline for updates."
+}
+
 // findLinkedCopilotPR searches for a PR created by the copilot-swe-agent bot that references the given issue.
 // It queries the issue's timeline for CrossReferencedEvent items from PRs authored by copilot-swe-agent.
 // The createdAfter parameter filters to only return PRs created after the specified time.
@@ -390,13 +446,9 @@ func AssignCopilotToIssue(t translations.TranslationHelperFunc) inventory.Server
 				})
 			}
 
-			var linkedPR *linkedPullRequest
-			for attempt := range pollConfig.MaxAttempts {
-				if attempt > 0 {
-					time.Sleep(pollConfig.Delay)
-				}
-
-				// Send progress notification if progress token is available
+			linkedPR, pollErr := pollLinkedCopilotPR(ctx, pollConfig, func(ctx context.Context) (*linkedPullRequest, error) {
+				return findLinkedCopilotPR(ctx, client, params.Owner, params.Repo, int(params.IssueNumber), assignmentTime)
+			}, func(attempt int) {
 				if progressToken != nil && request.Session != nil {
 					_ = request.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 						ProgressToken: progressToken,
@@ -405,17 +457,7 @@ func AssignCopilotToIssue(t translations.TranslationHelperFunc) inventory.Server
 						Message:       fmt.Sprintf("Waiting for Copilot to create PR... (attempt %d/%d)", attempt+1, pollConfig.MaxAttempts),
 					})
 				}
-
-				pr, err := findLinkedCopilotPR(ctx, client, params.Owner, params.Repo, int(params.IssueNumber), assignmentTime)
-				if err != nil {
-					// Polling errors are non-fatal, continue to next attempt
-					continue
-				}
-				if pr != nil {
-					linkedPR = pr
-					break
-				}
-			}
+			})
 
 			// Build the result
 			result := map[string]any{
@@ -426,19 +468,7 @@ func AssignCopilotToIssue(t translations.TranslationHelperFunc) inventory.Server
 				"repo":         params.Repo,
 			}
 
-			// Add PR info if found during polling
-			if linkedPR != nil {
-				result["pull_request"] = map[string]any{
-					"number": linkedPR.Number,
-					"url":    linkedPR.URL,
-					"title":  linkedPR.Title,
-					"state":  linkedPR.State,
-				}
-				result["message"] = "successfully assigned copilot to issue - pull request created"
-			} else {
-				result["message"] = "successfully assigned copilot to issue - pull request pending"
-				result["note"] = "The pull request may still be in progress. Once created, the PR number can be used to check job status, or check the issue timeline for updates."
-			}
+			addCopilotPollingResult(result, linkedPR, pollErr)
 
 			r, err := json.Marshal(result)
 			if err != nil {
@@ -770,11 +800,9 @@ func AssignCopilotToIssueWithIntent(t translations.TranslationHelperFunc) invent
 				})
 			}
 
-			var linkedPR *linkedPullRequest
-			for attempt := range pollConfig.MaxAttempts {
-				if attempt > 0 {
-					time.Sleep(pollConfig.Delay)
-				}
+			linkedPR, pollErr := pollLinkedCopilotPR(ctx, pollConfig, func(ctx context.Context) (*linkedPullRequest, error) {
+				return findLinkedCopilotPR(ctx, client, params.Owner, params.Repo, int(params.IssueNumber), assignmentTime)
+			}, func(attempt int) {
 				if progressToken != nil && request.Session != nil {
 					_ = request.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 						ProgressToken: progressToken,
@@ -783,28 +811,8 @@ func AssignCopilotToIssueWithIntent(t translations.TranslationHelperFunc) invent
 						Message:       fmt.Sprintf("Waiting for Copilot to create PR... (attempt %d/%d)", attempt+1, pollConfig.MaxAttempts),
 					})
 				}
-				pr, err := findLinkedCopilotPR(ctx, client, params.Owner, params.Repo, int(params.IssueNumber), assignmentTime)
-				if err != nil {
-					continue
-				}
-				if pr != nil {
-					linkedPR = pr
-					break
-				}
-			}
-
-			if linkedPR != nil {
-				result["pull_request"] = map[string]any{
-					"number": linkedPR.Number,
-					"url":    linkedPR.URL,
-					"title":  linkedPR.Title,
-					"state":  linkedPR.State,
-				}
-				result["message"] = "successfully assigned copilot to issue - pull request created"
-			} else {
-				result["message"] = "successfully assigned copilot to issue - pull request pending"
-				result["note"] = "The pull request may still be in progress. Once created, the PR number can be used to check job status, or check the issue timeline for updates."
-			}
+			})
+			addCopilotPollingResult(result, linkedPR, pollErr)
 
 			r, err := json.Marshal(result)
 			if err != nil {
