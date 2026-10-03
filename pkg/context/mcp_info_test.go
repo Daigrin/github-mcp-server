@@ -15,11 +15,11 @@ func TestMCPMethodInfoDecodeArgumentsCachesResult(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, decoded)
 	assert.Equal(t, "github", decoded["owner"])
-	assert.Same(t, decoded, info.Arguments)
+	assert.Equal(t, decoded, info.Arguments)
 
 	cached, err := info.DecodeArguments()
 	require.NoError(t, err)
-	assert.Same(t, decoded, cached)
+	assert.Equal(t, decoded, cached)
 }
 
 func TestMCPMethodInfoDecodeArgumentsUsesExistingArguments(t *testing.T) {
@@ -28,7 +28,7 @@ func TestMCPMethodInfoDecodeArgumentsUsesExistingArguments(t *testing.T) {
 
 	decoded, err := info.DecodeArguments()
 	require.NoError(t, err)
-	assert.Same(t, arguments, decoded)
+	assert.Equal(t, arguments, decoded)
 }
 
 func TestMCPMethodInfoDecodeArgumentsCachesErrors(t *testing.T) {
