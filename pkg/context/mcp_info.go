@@ -3,6 +3,7 @@ package context
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -22,8 +23,22 @@ type MCPMethodInfo struct {
 	// ItemName is the name of the specific item being accessed (tool name, resource URI, prompt name)
 	// Only populated for call/get methods (tools/call, prompts/get, resources/read)
 	ItemName string
+	// Owner and Repo are best-effort exact-key string values from tools/call arguments.
+	// Invalid or missing values are represented by an empty string.
+	Owner string
+	Repo  string
+	// Arguments contains the decoded tools/call arguments after DecodeArguments is
+	// called. The returned map is shared and must not be mutated.
+	//
+	// Prefer RawArguments and DecodeArguments in new code.
+	Arguments map[string]any
 	// RawArguments contains the unmaterialized tool arguments for tools/call requests.
 	RawArguments json.RawMessage
+
+	decodeMu         sync.Mutex
+	decodeDone       bool
+	decodeErr        error
+	decodedArguments map[string]any
 	// ProtocolVersion and ClientCapabilities describe the requesting MCP client
 	// when stateless HTTP parsing makes them available before registration.
 	ProtocolVersion    string
@@ -31,18 +46,39 @@ type MCPMethodInfo struct {
 }
 
 // DecodeArguments materializes tool arguments when request middleware needs
-// call-specific values. Invalid argument shapes are returned to the caller so
-// the request can continue to the tool handler's normal validation path.
+// call-specific values. Concurrent calls on the same MCPMethodInfo are safe.
+// The returned map is cached and shared; callers must treat it as read-only and
+// must not mutate MCPMethodInfo argument fields after the first call.
+// Invalid argument shapes are returned to the caller so the request can
+// continue to the tool handler's normal validation path.
 func (info *MCPMethodInfo) DecodeArguments() (map[string]any, error) {
+	info.decodeMu.Lock()
+	defer info.decodeMu.Unlock()
+
+	if info.decodeDone {
+		return info.decodedArguments, info.decodeErr
+	}
+	if info.Arguments != nil {
+		info.decodedArguments = info.Arguments
+		info.decodeDone = true
+		return info.decodedArguments, nil
+	}
 	if len(info.RawArguments) == 0 {
+		info.decodeDone = true
 		return nil, nil
 	}
 
 	var arguments map[string]any
 	if err := json.Unmarshal(info.RawArguments, &arguments); err != nil {
+		info.decodeErr = err
+		info.decodeDone = true
 		return nil, err
 	}
-	return arguments, nil
+	info.decodedArguments = arguments
+	info.Arguments = arguments
+	info.decodeDone = true
+
+	return info.decodedArguments, nil
 }
 
 // WithMCPMethodInfo stores the MCPMethodInfo in the context.

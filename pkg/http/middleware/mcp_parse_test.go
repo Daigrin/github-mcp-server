@@ -24,6 +24,8 @@ func TestWithMCPParse(t *testing.T) {
 		expectedMethod   string
 		expectedItem     string
 		expectedRaw      string
+		expectedOwner    string
+		expectedRepo     string
 		expectedArgs     map[string]any
 		expectedProtocol string
 		expectedForm     bool
@@ -110,6 +112,8 @@ func TestWithMCPParse(t *testing.T) {
 			expectedMethod: "tools/call",
 			expectedItem:   "get_file_contents",
 			expectedRaw:    `{"owner":"github","repo":"github-mcp-server","path":"README.md"}`,
+			expectedOwner:  "github",
+			expectedRepo:   "github-mcp-server",
 			expectedArgs:   map[string]any{"owner": "github", "repo": "github-mcp-server", "path": "README.md"},
 		},
 		{
@@ -122,6 +126,28 @@ func TestWithMCPParse(t *testing.T) {
 			expectedItem:    "get_file_contents",
 			expectedRaw:     `"not an object"`,
 			expectArgsError: true,
+		},
+		{
+			name:           "invalid owner type does not block repo extraction",
+			method:         http.MethodPost,
+			path:           "/mcp",
+			body:           `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"owner":123,"repo":"github-mcp-server"}}}`,
+			expectInfo:     true,
+			expectedMethod: "tools/call",
+			expectedItem:   "get_file_contents",
+			expectedRepo:   "github-mcp-server",
+		},
+		{
+			name:           "compatibility fields use exact keys and last duplicates",
+			method:         http.MethodPost,
+			path:           "/mcp",
+			body:           `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_file_contents","arguments":{"Owner":"ignored","owner":"first","owner":"second","repo":"one","repo":"two"}}}`,
+			expectInfo:     true,
+			expectedMethod: "tools/call",
+			expectedItem:   "get_file_contents",
+			expectedOwner:  "second",
+			expectedRepo:   "two",
+			expectedArgs:   map[string]any{"Owner": "ignored", "owner": "second", "repo": "two"},
 		},
 		{
 			name:           "prompts/get parses name",
@@ -183,6 +209,8 @@ func TestWithMCPParse(t *testing.T) {
 				if tt.expectedRaw != "" {
 					assert.JSONEq(t, tt.expectedRaw, string(capturedInfo.RawArguments))
 				}
+				assert.Equal(t, tt.expectedOwner, capturedInfo.Owner)
+				assert.Equal(t, tt.expectedRepo, capturedInfo.Repo)
 				decodedArgs, err := capturedInfo.DecodeArguments()
 				if tt.expectArgsError {
 					assert.Error(t, err)
@@ -191,6 +219,7 @@ func TestWithMCPParse(t *testing.T) {
 				}
 				if tt.expectedArgs != nil {
 					assert.Equal(t, tt.expectedArgs, decodedArgs)
+					assert.Equal(t, decodedArgs, capturedInfo.Arguments)
 				}
 			} else {
 				assert.False(t, infoCaptured, "MCPMethodInfo should not be present in context")
